@@ -29,6 +29,9 @@ jobs:
       - name: Enable MinGW compiler
         shell: pwsh
         run: '"C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
+      - name: Sync missing lockfile dependencies
+        shell: pwsh
+        run: flutter pub get
       - name: Build all-sources Windows package
         shell: pwsh
         env:
