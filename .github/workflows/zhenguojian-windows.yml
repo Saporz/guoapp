@@ -32,6 +32,9 @@ jobs:
       - name: Sync missing lockfile dependencies
         shell: pwsh
         run: flutter pub get
+      - name: Test playback diagnostics
+        shell: pwsh
+        run: flutter test test/playback_diagnostics_test.dart --dart-define=ALL_SOURCES=true
       - name: Build all-sources Windows package
         shell: pwsh
         env:

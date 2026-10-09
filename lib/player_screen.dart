@@ -14,6 +14,7 @@ import 'app_orientation.dart';
 import 'app_theme.dart';
 import 'core_bridge.dart';
 import 'diary_service.dart';
+import 'playback_diagnostics.dart';
 import 'luna_exo_player.dart';
 import 'danmaku_controller.dart';
 import 'danmaku_overlay.dart';
@@ -100,6 +101,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   late final int _profileEpoch;
   int _openedIndex = -1;
   int _generation = 0;
+  int _progressLoggedGeneration = -1;
   int _requestedQuality = 0;
   bool _loading = true;
   bool _forceOnline = false;
@@ -232,10 +234,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     _configurePictureInPicture();
     _subscriptions.add(
       _player.stream.error.listen((error) {
+        DiaryService.add('[MPV#error] attempt=$_generation ${safePlaybackMessage(error)}');
         if (_enhancement.handlePlaybackError(error)) return;
         if (!_closed && _acceptErrors && mounted && error.trim().isNotEmpty) {
           _queueRecovery();
         }
+      }),
+    );
+    _subscriptions.add(
+      _player.stream.log.listen((log) {
+        DiaryService.add('[MPV#log] ${log.prefix} ${log.level} ${safePlaybackMessage(log.text)}');
       }),
     );
     _subscriptions.add(
@@ -266,6 +274,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     _subscriptions.add(
       _player.stream.position.listen((position) {
         if (!_closed && _openedIndex == _index && position > Duration.zero) {
+          if (_progressLoggedGeneration != _generation) {
+            _progressLoggedGeneration = _generation;
+            DiaryService.add('[Play] playback advancing attempt=$_generation position=${position.inMilliseconds}ms');
+          }
           _resumePosition = position.inMilliseconds / 1000;
         }
         _syncDanmaku();
@@ -1033,6 +1045,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               'seg_max_retry=3',
               'strict=experimental',
               'allowed_extensions=ALL',
+              'extension_picky=0',
               plan.local
                   ? 'protocol_whitelist=[file,crypto,data]'
                   : 'protocol_whitelist=[http,https,tcp,tls,crypto,data,file]',
@@ -1045,7 +1058,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         _plan = plan;
         installed = true;
         _acceptErrors = true;
-        DiaryService.add('[Play] 调用 _player.open: url=${plan.url}, headers=${plan.headers.keys.toList()}');
+        DiaryService.add('[Play] diagnostic-v1 attempt=$ticket source=${widget.detail.drama.source} episode=${index + 1} local=${plan.local} encrypted=${plan.decryptionKey.isNotEmpty} headers=${plan.headers.keys.toList()}');
+        unawaited(probePlayback(plan.url, ticket));
         await _player.open(
           Media(
             plan.url,
@@ -1075,7 +1089,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
       });
     } catch (error) {
-      DiaryService.add('[Play] 捕获播放流程错误: $error');
+      DiaryService.add('[Play] 捕获播放流程错误: ${safePlaybackMessage(error.toString())}');
       if (!_closed && mounted && ticket == _generation) {
         if (prepared != null && identical(_plan, prepared)) {
           _acceptErrors = true;
